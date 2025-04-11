@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Deposit Money</title>
+  <style>
+    body {
+      background: #f0f2f5;
+      font-family: 'Poppins', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .container {
+      background: #fff;
+      padding: 30px 40px;
+      border-radius: 12px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+      width: 350px;
+      text-align: center;
+    }
+    h2 {
+      margin-bottom: 20px;
+      color: #333;
+    }
+    label {
+      font-weight: 500;
+      margin-bottom: 5px;
+      display: block;
+      text-align: left;
+      color: #555;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 15px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    button {
+      width: 100%;
+      background: #4CAF50;
+      border: none;
+      padding: 12px;
+      color: white;
+      font-size: 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+      margin-top: 10px;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    .qr-image {
+      display: none;
+      margin: 20px auto;
+      max-width: 200px;
+      border: 1px solid #ccc;
+      padding: 10px;
+      border-radius: 10px;
+      background: #fafafa;
+    }
+    .utr-section {
+      display: none;
+      margin-top: 20px;
+    }
+    .error {
+      color: red;
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+    .status-message {
+      margin-top: 15px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>Deposit via UPI</h2>
+  
+  <form id="utr-form">
+    <label for="amount">Enter Amount (Min ₹50)</label>
+    <input type="number" id="amount" min="50" placeholder="e.g. 500" required>
+
+    <div id="error-msg" class="error"></div>
+
+    <button type="button" id="payment-now-btn" style="display:none;">Payment Now</button>
+
+    <img class="qr-image" id="qr-code" src="" alt="Scan QR Code">
+    
+    <div class="utr-section" id="utr-section">
+      <label for="utr">Enter UTR Number</label>
+      <input type="text" id="utr" maxlength="12" placeholder="e.g. 1234567890AB" required>
+      <button type="submit">Submit Payment</button>
+    </div>
+
+    <div id="status-msg" class="status-message"></div>
+
+  </form>
+</div>
+
+<script>
+const amountInput = document.getElementById('amount');
+const qrImage = document.getElementById('qr-code');
+const errorMsg = document.getElementById('error-msg');
+const paymentNowBtn = document.getElementById('payment-now-btn');
+const utrSection = document.getElementById('utr-section');
+const statusMsg = document.getElementById('status-msg');
+const container = document.querySelector('.container');
+let submittedUtr = null;
+
+let submitCount = 0; // New: submit counter
+
+// Show Payment Now button after entering valid amount
+amountInput.addEventListener('input', function() {
+  const amount = parseInt(amountInput.value.trim());
+  qrImage.style.display = 'none';
+  utrSection.style.display = 'none';
+  paymentNowBtn.style.display = 'none';
+  statusMsg.textContent = '';
+  clearTimeout(window.showUTRTimer);
+
+  if (isNaN(amount) || amount < 50) {
+    errorMsg.textContent = 'Minimum amount should be ₹50!';
+  } else {
+    errorMsg.textContent = '';
+    paymentNowBtn.style.display = 'block';
+  }
+});
+
+// On Payment Now click -> show QR and then after 5s show UTR input
+paymentNowBtn.addEventListener('click', function() {
+  const amount = parseInt(amountInput.value.trim());
+  if (isNaN(amount) || amount < 50) {
+    errorMsg.textContent = 'Enter valid amount first!';
+    return;
+  }
+
+  const upiId = "6390885942@axl";
+  const name = "Shashwat Shukla";
+  const upiLink = `upi://pay?pa=${upiId}&pn=${name}&am=${amount}&cu=INR`;
+  const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(upiLink)}`;
+
+  qrImage.src = qrUrl;
+  qrImage.style.display = 'block';
+  utrSection.style.display = 'none';
+
+  clearTimeout(window.showUTRTimer);
+
+  window.showUTRTimer = setTimeout(() => {
+    utrSection.style.display = 'block';
+  }, 5000);
+});
+
+// Handle UTR form submit
+document.getElementById('utr-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  
+  submitCount++; // Increase submit count
+
+  if (submitCount > 3) {
+    // User blocked after 3 wrong submits
+    container.innerHTML = `
+      <h2 style="color: red;">You are blocked from PlayInWin!</h2>
+      <p style="color: red; font-weight: bold;">Because you submitted invalid payments multiple times.</p>
+    `;
+    return;
+  }
+
+  const amount = amountInput.value.trim();
+  const utr = document.getElementById('utr').value.trim();
+  
+  if (!amount || !utr) {
+    alert('Please enter both amount and UTR!');
+    return;
+  }
+  
+  const res = await fetch('/submit-utr', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount, utr })
+  });
+  
+  const data = await res.json();
+  alert(data.message);
+  
+  if (res.ok) {
+    submittedUtr = utr; 
+    checkPaymentStatus(); 
+  }
+});
+
+// Check payment status function
+async function checkPaymentStatus() {
+  if (!submittedUtr) return;
+  
+  statusMsg.textContent = 'Waiting for Admin Approval...';
+
+  const interval = setInterval(async () => {
+    const res = await fetch(`/check-payment-status?utr=${submittedUtr}`);
+    const data = await res.json();
+
+    if (data.status === 'approved') {
+      statusMsg.textContent = 'Payment Approved! Amount added successfully.';
+      clearInterval(interval);
+    } else if (data.status === 'rejected') {
+      statusMsg.textContent = 'Payment Rejected! Please try again.';
+      clearInterval(interval);
+    }
+    // else keep waiting if status is pending
+  }, 3000);
+}
+</script>
+
+</body>
+</html>
